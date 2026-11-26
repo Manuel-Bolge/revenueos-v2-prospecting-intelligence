@@ -1,181 +1,217 @@
-# RevenueOS V2 — Prospecting & Sales Intelligence
+# RevenueOS V2: AI Prospecting & Sales Intelligence
 
-**An end-to-end GTM engineering portfolio project** that transforms a raw prospect into an enriched, researched, scored, and actionable Salesforce record.
-
-**Built for:** Lolia, a fictional B2B AI Revenue Intelligence SaaS company  
-**Core stack:** n8n · Salesforce · Clay · Tavily · DeepSeek · JavaScript · Gmail/SMTP  
-**Project type:** Demonstration and portfolio system; not a production deployment
-
-> **Business outcome:** Reduce repetitive sales-operations handoffs by connecting prospect intake, CRM deduplication, data enrichment, evidence-based account classification, ICP scoring, sales research, CRM writeback, and qualified follow-up tasks.
->
-> This project demonstrates working automation, **not a measured claim of revenue uplift, conversion gains, or hours saved**.
-
-## 1. The business problem
-
-A B2B sales team can spend significant time moving prospect information between systems: checking whether an account already exists, enriching incomplete data, determining fit, researching what to say, updating CRM fields, and assigning follow-up. Without controls, this can also create duplicate contacts or tasks and allow low-confidence data into the CRM.
-
-**RevenueOS V2** addresses that workflow as an integrated process, with AI used for interpretation and written research and JavaScript rules used for scoring and execution gates.
-
-## 2. System architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
-    A[Prospect intake / test record] --> B[Normalize company and contact]
-    B --> C{Salesforce Account exists?}
-    C -->|Yes| D[Reuse Account]
-    C -->|No| E[Create Account]
-    D --> F{Salesforce Contact exists?}
-    E --> F
-    F -->|Yes| G[Reuse Contact]
-    F -->|No| H[Create Contact]
-    G --> I[Send prospect to Clay]
-    H --> I
-    I --> J[Clay enrichment]
-    J --> K[Authenticated n8n webhook]
-    K --> L[Tavily official-domain search]
-    L --> M[Select website evidence]
-    M --> N[DeepSeek business-model classifier]
-    M --> O[Merge classification and source data]
-    N --> O
-    O --> P[JavaScript ICP scoring]
-    P --> Q[DeepSeek account research]
-    P --> R[Merge scored data and research]
-    Q --> R
-    R --> S{Quality gate}
-    S -->|Provisional / invalid| T[Hold; no CRM writeback]
-    S -->|Complete + verified| U[Salesforce Account + Contact update]
-    U --> V{Qualified task?}
-    V -->|No| W[Stop]
-    V -->|Yes| X{Matching task already exists?}
-    X -->|Yes| Y[Skip duplicate]
-    X -->|No| Z[Create task for Account owner]
+    A[Prospect Intake] --> B[Salesforce Account & Contact Deduplication]
+    B --> C[Clay Data Enrichment]
+    C --> D[Official Website Research]
+    D --> E[AI Business Model Classification]
+    E --> F[Deterministic ICP Scoring]
+    F --> G[AI Account Research]
+    G --> H{Data Quality Gate}
+    H -->|Complete and Verified| I[Salesforce Account & Contact Update]
+    H -->|Provisional| J[Hold]
+    I --> K{Qualified for Follow-Up?}
+    K -->|Yes| L[Existing Task Check]
+    K -->|No| M[End]
+    L -->|No Matching Task| N[Create Salesforce Task]
+    L -->|Task Exists| O[Skip Duplicate]
 ```
 
-A separate n8n **Error Handler** receives failed production executions from the configured workflows, formats error details, and sends an email notification via SMTP.
+## The Business Problem
 
-**Boundary:** The Clay enrichment table and outbound HTTP API action are external configuration and are **not included** in the three n8n workflow JSON exports.
+At **Lolia**, a fictional B2B AI-powered Revenue Intelligence SaaS company, preparing an account for sales engagement involved several disconnected steps: checking CRM records, researching the business, enriching company data, assessing customer fit, and preparing a relevant sales approach.
 
-## 3. Workflow modules
+This created three operational challenges:
 
-| File | Responsibility |
-| --- | --- |
-| [`01-prospecting-engine.json`](workflows/01-prospecting-engine.json) | Test prospect intake, normalization, Salesforce Account/Contact lookups and creation, preparation and authenticated handoff to Clay |
-| [`02-enrichment-sales-intelligence.json`](workflows/02-enrichment-sales-intelligence.json) | Authenticated enrichment receiver, Tavily research, AI business-model classification, ICP scoring, account research, CRM quality gate, Salesforce writeback, qualification and task deduplication |
-| [`03-error-handler.json`](workflows/03-error-handler.json) | Error Trigger, error-detail formatting, SMTP email notifications |
+1. **Fragmented prospect data:** Company, contact, technology, and growth information needed to be gathered from multiple sources.
+2. **Inconsistent qualification:** Sales prioritization depended on manual research and interpretation rather than a repeatable Ideal Customer Profile (ICP) model.
+3. **Repetitive CRM administration:** Duplicate records, incomplete account intelligence, and follow-up tasks increased the operational workload.
 
-### Enrichment data contract
-
-The downstream workflow expects the following fields (from the prospecting/CRM stage and Clay):
-
-| Source | Fields |
-| --- | --- |
-| Prospecting / CRM | `companyName`, `domain`, `accountId`, `contactId`, `firstName` |
-| Company description and firmographics | `companyDescription`, `industry`, `employeeCount`, `revenueUsd`, `revenueStatus` |
-| Technographics | `detectedProducts` |
-| Growth signals | `growthScore`, `growthScore90DayDelta`, `growthDirection` |
-
-The Clay setup used company firmographic, technology and growth enrichment actions, with data mapped into these names before returning to n8n. Provider coverage and estimates may be incomplete or inaccurate. The raw `industry` field is retained as context; it is **not** the final AI category used for ICP industry points.
-
-## 4. ICP scoring model (100 points)
-
-The ICP is oriented toward **B2B SaaS / business-software companies**, with a preference for roughly **50–2,000 employees**, revenue above **$10 million**, relevant CRM usage, and positive growth signals.
-
-| Dimension | Max points | Implemented rule |
-| --- | ---: | --- |
-| Business model | 25 | `B2B_SAAS` = 25; `B2B_SOFTWARE` = 20; `MIXED_TECH` = 10; `NOT_ICP` = 0; `UNKNOWN` = 0 |
-| Revenue | 25 | Over $10M = 25; $5M–$10M = 15; $1M–under $5M = 5; otherwise 0 |
-| Employees | 20 | 50–2,000 = 20; 20–49 or 2,001–5,000 = 10; otherwise 0 |
-| Growth | 15 | Up to 15 using supplied growth score, 90-day delta and growth direction |
-| CRM technology | 15 | 15 if recognized Salesforce/HubSpot CRM product signals are present; otherwise 0 |
-
-**Fit tiers:** High = **80–100**, Medium = **60–79**, Low = **0–59**.
-
-**Verification is distinct from points.** The classifier supplies a category, supporting quote, confidence estimate and `needsReview`. The scoring code checks whether usable website evidence exists and whether the normalized supporting quote appears in supplied evidence. A score may be calculated but marked **`Provisional`** when verification or required enrichment fields are missing. The quality gate requires `scoreStatus = Complete`, `industryVerified = true`, IDs present, and a valid score before updating Salesforce. A task additionally requires a non-`NOT_ICP` category and score ≥ 60.
-
-**Practical caveat:** A quote found in evidence does not independently prove that the whole-company category is correct. Confidence is model-estimated, not calibrated statistical probability. Human review and stronger evidence checks are sensible for higher-stakes use.
-
-## 5. AI and automation responsibilities
-
-- **Tavily:** Retrieves search snippets from the company's official domain. A JavaScript node filters career pages, prioritizes relevant paths, and selects up to three evidence records.
-- **DeepSeek — business-model classifier:** Classifies the company's *primary* model as `B2B_SAAS`, `B2B_SOFTWARE`, `MIXED_TECH`, `NOT_ICP`, or `UNKNOWN`, with a structured JSON output. The classifier model is configured with temperature `0` to reduce variation, not guarantee identical results.
-- **JavaScript — ICP score:** Calculates the score deterministically from incoming fields and classification; AI does not freely assign points.
-- **DeepSeek — account research:** Summarizes the account, proposes *hypothesized* pain points, suggests a sales angle, drafts short personalization, and notes evidence gaps. It is instructed not to alter the incoming ICP score.
-- **Salesforce:** Stores ICP score, fit tier and account research on the Account; writes personalization to the Contact; creates an Account-owner follow-up task when the qualification and deduplication checks allow it.
-
-## 6. Reliability and safety controls
-
-- **Account and Contact deduplication** before creating CRM records.
-- **Authenticated handoffs:** n8n-to-Clay uses a Clay webhook credential; Clay-to-n8n uses Header Auth on the inbound webhook.
-- **Evidence-aware classifications** and a **Provisional/Complete** status.
-- **Quality gate before Salesforce writeback** that blocks incomplete or unverified intelligence.
-- **Task qualification** that requires Complete, verified, non-`NOT_ICP` results and score ≥ 60.
-- **Task deduplication** via an existing Salesforce Task lookup (`WhatId`, `WhoId`, task-subject prefix).
-- **Workflow-level failure notifications** through n8n Error Trigger and SMTP email.
-
-**Current limitation:** Provisional items are held by the quality gate, but the exported workflow does not include a dedicated human-review queue. The task deduplication check is lookup-based rather than a transactional uniqueness guarantee, so concurrent executions could still race.
-
-## Screenshot evidence
-
-The [screenshots checklist](screenshots/README.md) lists the n8n, Clay, Salesforce, deduplication, and error-alert captures planned for this case study. **Real screenshots are not yet uploaded.** Screenshots will be published only after checking for private email addresses, CRM identifiers, tokens, webhook URLs, and customer data.
-
-## 7. Tests performed
-
-The following are **reported functional tests in the project development process**, not independent production benchmarks:
-
-| Scenario | Observed outcome |
-| --- | --- |
-| Account/Contact new-versus-existing paths | Salesforce lookup and create/reuse paths exercised |
-| Amplitude repeated classification/scoring | Five consecutive runs reported consistent after scoring revisions |
-| Adobe provisional classification | Routed to the False quality-gate branch; Salesforce was not updated |
-| Valid Salesforce writeback | Account and Contact API responses returned `success: true` |
-| Eligible new task | Salesforce task creation tested successfully |
-| Existing matching task | Existing task was detected and no duplicate task was created |
-| Intentional failed production execution | Configured Error Handler executed and email notification worked |
-
-These tests support the demonstrated workflow behavior; they are not proof of universal classifier accuracy, high availability or financial ROI.
-
-## 8. Local setup / reproduction
-
-**Prerequisites:** A running n8n instance, Salesforce environment with suitable API access and custom fields, Clay workspace with required enrichments, Tavily and DeepSeek API access, and optional SMTP credentials for error notifications. A public HTTPS address (e.g., a Cloudflare Tunnel) is needed for Clay to reach local n8n.
-
-1. Import the three JSON files into n8n.
-2. Reconnect the Salesforce OAuth, DeepSeek, Tavily, Webhook Header Auth, Clay HTTP Request Header Auth, and SMTP credentials. **No live credentials are included in this repository.**
-3. Configure the Salesforce Account fields for domain, ICP score, fit tier and research, and the Contact personalization field. Match the actual API names in the imported nodes (`Domain__c`, `RevenueOS_ICP_Score__c`, `RevenueOS_Fit_Tier__c`, `RevenueOS_Account_Research__c`, and `RevenueOS_Personalization__c`).
-4. Replace the placeholder **Clay webhook URL** in Workflow 1 and the placeholder **Salesforce organization domain** in Workflow 2.
-5. Configure Clay to receive the prospect from Workflow 1, map and enrich the required fields, and send a JSON `POST` to Workflow 2's webhook with the matching Header Auth secret.
-6. If n8n is local, configure the public HTTPS tunnel for Workflow 2's production webhook and update Clay's endpoint when using a temporary tunnel hostname.
-7. In each main workflow's **Settings**, select the imported Error Handler as the **Error Workflow**. Set the sender and recipient email fields in the Error Handler to an address you control, and check that the full message body is in the appropriate node field for your n8n version.
-8. Run an end-to-end test with a **fictional or authorized test contact**, and confirm the Salesforce update and task outcomes. Then run a duplicate scenario and a Provisional scenario.
-9. Publish workflows as needed. For the existing Workflow 1 export, intake begins with a **manual test trigger**; replace it with a suitable production source/trigger for real unattended prospect ingestion.
-
-> **Import safety:** These are **sanitized demonstration exports**. Their credentials, private endpoints, webhook path and workflow settings have been removed or replaced. They are not plug-and-play production workflows.
-
-## 9. Security and privacy
-
-- Never commit OAuth tokens, API keys, SMTP App Passwords, webhook authentication secrets, customer records or personal test data.
-- Store sensitive values in n8n credentials and use the appropriate secured connector settings.
-- Use example prospect data and review pinned executions and screenshots before publishing.
-- Because this repository contains redacted workflows, do not treat the supplied placeholder endpoints as active integrations.
-
-## 10. Roadmap
-
-- Add a structured **human-review queue** for provisional/contradictory classifications.
-- Improve evidence validation beyond substring matching, and log sources/freshness.
-- Add tests for missing revenue, missing product signals, malformed IDs and downstream API failures.
-- Add durable idempotency for simultaneous task-creation requests.
-- Track execution metrics such as enrichment completeness, qualification rates, failure rates and sales response time.
-- Replace temporary local tunneling with a reliable deployment where appropriate.
-
-## 11. Suggested demo narrative
-
-1. Introduce a **new authorized test prospect**.
-2. Show Account and Contact resolution in Salesforce.
-3. Show enrichment returned by Clay and evidence retrieved by Tavily.
-4. Walk through AI classification and the deterministic ICP point breakdown.
-5. Demonstrate a successful Salesforce writeback and eligible task creation.
-6. Re-run the prospect to show that an existing task is detected and skipped.
-7. Show how Provisional data is held and how failed production executions generate an error notification.
+The underlying problem was the absence of a consistent process for turning a new prospect into an enriched, qualified, and actionable Salesforce account.
 
 ---
 
-**Disclaimer:** Lolia is a fictional portfolio company. Companies mentioned in tests are illustrative research subjects; this project is not affiliated with those companies, Salesforce, Clay, n8n, Tavily or DeepSeek.
+## The Solution
+
+**RevenueOS V2** connects prospecting, enrichment, research, qualification, and CRM execution in one automated GTM workflow.
+
+The system:
+
+1. Normalizes prospect information and checks Salesforce for an existing Account and Contact.
+2. Reuses existing records or creates new ones when needed.
+3. Sends the prospect to Clay for company, technology, and growth enrichment.
+4. Retrieves official website evidence to establish the company's primary business model.
+5. Uses DeepSeek to produce a structured, evidence-based business classification.
+6. Calculates a **deterministic ICP score** and assigns a fit tier.
+7. Generates account research, potential sales challenges, an outreach angle, and contact personalization.
+8. Validates data completeness and classification evidence before writing results to Salesforce.
+9. Creates a sales task for qualified prospects only when a matching task does not already exist.
+
+### Workflow
+
+**Prospect Intake → Salesforce Deduplication → Clay Enrichment → Website Evidence → AI Classification → ICP Scoring → Account Research → Validation → Salesforce Update → Sales Follow-Up**
+
+## Business Impact
+
+RevenueOS V2 is designed to improve prospecting and sales operations by:
+
+- Reducing repetitive account research and manual CRM updates.
+- Giving sales representatives a consistent view of account fit and supporting intelligence.
+- Prioritizing high-fit prospects for timely follow-up.
+- Preventing duplicate Account, Contact, and follow-up Task creation.
+- Keeping incomplete or unverified enrichment from automatically updating Salesforce.
+- Connecting prospect research directly to the CRM where sales teams work.
+
+The core outcome is a more consistent progression from **raw prospect → researched account → qualified sales action**.
+
+---
+
+## System Architecture & Logic
+
+RevenueOS V2 is orchestrated in **n8n**, with **Salesforce** as the CRM, **Clay** as the enrichment layer, **Tavily** for official website research, and **DeepSeek** for classification and account research. JavaScript controls scoring, validation, and operational decisions.
+
+The architecture separates AI interpretation from the business rules that determine scores, CRM writeback, and task creation.
+
+### 1. Prospect Intake & CRM Deduplication
+
+The workflow normalizes incoming company and contact details before querying Salesforce.
+
+- **Account lookup:** Matches existing Accounts using the company domain.
+- **Contact lookup:** Matches existing Contacts using the email address.
+- **Record creation:** Creates a Salesforce Account or Contact only when no matching record is found.
+- **Record continuity:** Carries Salesforce record IDs into the enrichment process, allowing results to be written back to the original records.
+
+This reduces unnecessary record duplication and maintains a consistent account-to-contact relationship.
+
+### 2. Company Enrichment & Business Classification
+
+Clay combines company information from enrichment providers:
+
+- **Datagma:** Company description.
+- **HG Insights:** Revenue, employee count, industry information, and technology usage.
+- **Crunchbase:** Growth score, 90-day change, and growth direction.
+
+The enriched record is returned to an authenticated n8n webhook.
+
+Tavily searches the company's official website. A JavaScript node selects relevant company and product evidence while filtering out careers and recruitment pages.
+
+DeepSeek classifies the company's primary business model using a structured output:
+
+- `B2B_SAAS`
+- `B2B_SOFTWARE`
+- `MIXED_TECH`
+- `NOT_ICP`
+- `UNKNOWN`
+
+The classification includes supporting evidence, reasoning, confidence, and a review indicator. The original provider industry label is retained separately from the final business-model classification.
+
+### 3. Deterministic ICP Scoring
+
+A JavaScript scoring engine evaluates five dimensions of Lolia's Ideal Customer Profile.
+
+| ICP Dimension | Maximum Points | Evaluation |
+| --- | ---: | --- |
+| Business model | 25 | B2B SaaS, B2B software, or diversified technology |
+| Revenue | 25 | Higher scores for revenue above $10 million |
+| Employee count | 20 | Strongest fit at 50–2,000 employees |
+| Growth | 15 | Growth score, 90-day movement, and growth direction |
+| CRM technology | 15 | Verified Salesforce or HubSpot product signals |
+| **Total** | **100** | |
+
+**Fit tiers:**
+
+- **High:** 80–100
+- **Medium:** 60–79
+- **Low:** 0–59
+
+The score is calculated from explicit rules rather than assigned by the AI model.
+
+A separate validation step checks required data and supporting industry evidence. Incomplete or unverified results receive a **Provisional** status and are held before CRM writeback. Only **Complete**, verified records proceed to the Salesforce update stage.
+
+### 4. AI Account Research & Salesforce Writeback
+
+DeepSeek generates structured account intelligence from the enriched company data:
+
+- Company summary
+- Potential revenue-operations challenges, identified as hypotheses
+- Recommended sales approach
+- Personalized outreach opening
+- Information requiring further verification
+
+For validated records, Salesforce is updated with:
+
+- **Account:** ICP score, fit tier, and account research report
+- **Contact:** Personalized outreach text
+
+The AI research layer provides context for sales outreach without changing the deterministic ICP score.
+
+### 5. Sales Task Creation & Deduplication
+
+A Salesforce follow-up task is considered when the account has a verified, Complete score of at least **60** and belongs to a relevant business-model category.
+
+- **High-fit accounts (80–100):** Sales Follow-Up
+- **Medium-fit accounts (60–79):** Research & Qualify
+
+Before creating a task, the workflow searches Salesforce for a matching task associated with the same Account and Contact. Existing tasks are skipped. New tasks are assigned to the Account owner.
+
+Low-fit accounts do not trigger automatic sales tasks.
+
+### 6. Error Handling & Monitoring
+
+A separate n8n error-handling workflow receives failed executions, captures the workflow name, failed node, error message, and execution reference, and sends an email notification through SMTP.
+
+This provides visibility into automation failures without relying solely on manual execution checks.
+
+### Architecture Principles
+
+RevenueOS V2 is built around four principles:
+
+1. **Resolve records before enrichment** — preserve CRM identity and limit duplicate creation.
+2. **Ground AI classifications in evidence** — use official company information and structured outputs.
+3. **Keep scoring and CRM actions deterministic** — apply explicit rules to qualification, writeback, and task creation.
+4. **Validate before execution** — prevent incomplete intelligence and duplicate tasks from generating unnecessary sales activity.
+
+---
+
+## Why This Project Matters
+
+RevenueOS V2 extends the GTM process beyond basic lead qualification by connecting **prospecting data, account intelligence, AI research, and sales execution**.
+
+It demonstrates how GTM engineering can reduce operational friction between data enrichment and CRM action while keeping scoring decisions transparent and follow-up workflows consistent.
+
+The result is a system designed to give sales representatives more useful account context and fewer administrative steps before engagement.
+
+---
+
+## Project Status
+
+**Status: Implemented and tested end-to-end**
+
+Validation covered:
+
+- Existing and newly created Salesforce Account and Contact paths
+- Business-model classification and ICP scoring
+- Repeated scoring consistency checks
+- Holding Provisional records before CRM writeback
+- Successful Salesforce Account and Contact updates
+- Task creation and duplicate-task prevention
+- Failure notifications from the Error Handler
+
+## Workflow Exports
+
+| Workflow | Responsibility |
+| --- | --- |
+| [Prospecting Engine](workflows/01-prospecting-engine.json) | Prospect intake, normalization, Salesforce Account/Contact matching, and Clay handoff |
+| [Enrichment & Sales Intelligence](workflows/02-enrichment-sales-intelligence.json) | Enrichment receiver, business classification, ICP scoring, account research, CRM writeback, and sales tasks |
+| [Error Handler](workflows/03-error-handler.json) | Execution failure alerts |
+
+*Published workflow exports exclude live credentials and private integration endpoints.*
+
+---
+
+## Next Version
+
+RevenueOS V3 will extend the platform into **Quote-to-Cash automation**, connecting the qualified sales process to quoting, approvals, and downstream revenue operations.
