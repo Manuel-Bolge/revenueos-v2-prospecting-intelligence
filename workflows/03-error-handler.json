@@ -1,0 +1,81 @@
+{
+  "name": "RevenueOS V2 — Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "36ed2d2f-890a-4170-aff2-4a991735d525",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn $input.all().map(item => {\n  const data = item.json;\n  const error = data.execution?.error ?? {};\n\n  return {\n    json: {\n      workflow: data.workflow?.name ?? 'Unknown',\n      failedNode: error.node?.name ?? 'Unknown',\n      errorMessage: error.message ?? 'Unknown error',\n      executionUrl: data.execution?.url ?? '',\n      timestamp: new Date().toISOString()\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "ddedbded-076e-4088-9de8-de9e8e15f5b3",
+      "name": "Format Error Details"
+    },
+    {
+      "parameters": {
+        "fromEmail": "your-email@example.com",
+        "toEmail": "your-email@example.com",
+        "subject": "={{ 'RevenueOS Error — ' + $json.workflow }}",
+        "emailFormat": "={{ `Workflow: ${$json.workflow}\nFailed Node: ${$json.failedNode}\nError: ${$json.errorMessage}\nTime: ${$json.timestamp}\nExecution: ${$json.executionUrl}` }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        0
+      ],
+      "id": "563499ad-2ae5-4f57-87e0-a1406b85a554",
+      "name": "Send an Email"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Details": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
