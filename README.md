@@ -54,6 +54,24 @@ The core outcome is a more consistent progression from **raw prospect → resear
 
 ---
 
+## System Proof
+
+**1. Prospecting & CRM Deduplication**
+
+![Prospecting Engine Workflow](screenshots/01-prospecting-workflow.png)
+
+**2. Enrichment & Sales Intelligence**
+
+![Enrichment and Sales Intelligence Workflow](screenshots/02-enrichment-workflow.png)
+
+**3. ICP Scoring & Qualification**
+
+![ICP Scoring Output](screenshots/03-icp-scoring.png)
+
+**4. Salesforce CRM Result**
+
+![Salesforce CRM Writeback](screenshots/04-salesforce-writeback.png)
+
 ## System Architecture & Logic
 
 RevenueOS V2 is orchestrated in **n8n**, with **Salesforce** as the CRM, **Clay** as the enrichment layer, **Tavily** for official website research, and **DeepSeek** for classification and account research. JavaScript controls scoring, validation, and operational decisions.
