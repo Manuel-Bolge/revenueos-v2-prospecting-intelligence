@@ -72,6 +72,14 @@ The core outcome is a more consistent progression from **raw prospect → resear
 
 ![Salesforce CRM Writeback](screenshots/04-salesforce-writeback.png)
 
+**5. Task Deduplication**
+
+![Task Deduplication](screenshots/05-task-deduplication.png)
+
+**6. Error Handling & Notifications**
+
+![Error Notification](screenshots/06-error-notification.png)
+
 ## System Architecture & Logic
 
 RevenueOS V2 is orchestrated in **n8n**, with **Salesforce** as the CRM, **Clay** as the enrichment layer, **Tavily** for official website research, and **DeepSeek** for classification and account research. JavaScript controls scoring, validation, and operational decisions.
