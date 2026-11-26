@@ -2,23 +2,8 @@
 
 ## System Architecture
 
-```mermaid
-flowchart TD
-    A[Prospect Intake] --> B[Salesforce Account & Contact Deduplication]
-    B --> C[Clay Data Enrichment]
-    C --> D[Official Website Research]
-    D --> E[AI Business Model Classification]
-    E --> F[Deterministic ICP Scoring]
-    F --> G[AI Account Research]
-    G --> H{Data Quality Gate}
-    H -->|Complete and Verified| I[Salesforce Account & Contact Update]
-    H -->|Provisional| J[Hold]
-    I --> K{Qualified for Follow-Up?}
-    K -->|Yes| L[Existing Task Check]
-    K -->|No| M[End]
-    L -->|No Matching Task| N[Create Salesforce Task]
-    L -->|Task Exists| O[Skip Duplicate]
-```
+**Prospect Intake → Salesforce Account & Contact Deduplication → Clay Enrichment → Official Website Research → AI Business Model Classification → ICP Scoring → AI Account Research → Quality Gate → Salesforce Update → Task Deduplication → Sales Follow-Up**
+
 
 ## The Business Problem
 
