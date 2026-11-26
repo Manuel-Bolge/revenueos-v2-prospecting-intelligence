@@ -193,7 +193,6 @@ Validation covered:
 | [Enrichment & Sales Intelligence](workflows/02-enrichment-sales-intelligence.json) | Enrichment receiver, business classification, ICP scoring, account research, CRM writeback, and sales tasks |
 | [Error Handler](workflows/03-error-handler.json) | Execution failure alerts |
 
-*Published workflow exports exclude live credentials and private integration endpoints.*
 
 ---
 
